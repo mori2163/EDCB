@@ -500,6 +500,22 @@ public:
 		return SendCmdWithoutData(CMD2_VIEW_APP_EXEC_VIEW_APP);
 	}
 
+	//TCP送信を動的に開始（録画中プロセスの設定ファイルの送信先を使用）
+	//戻り値：
+	// エラーコード
+	DWORD SendViewAddTcpSend(
+		){
+		return SendCmdWithoutData(CMD2_VIEW_APP_ADD_TCP_SEND);
+	}
+
+	//TCP送信を動的に停止
+	//戻り値：
+	// エラーコード
+	DWORD SendViewRemoveTcpSend(
+		){
+		return SendCmdWithoutData(CMD2_VIEW_APP_REMOVE_TCP_SEND);
+	}
+
 private:
 	BOOL tcpFlag;
 	DWORD connectTimeOut;

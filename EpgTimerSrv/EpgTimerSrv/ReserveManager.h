@@ -181,6 +181,8 @@ private:
 	CBatManager batPostManager;
 
 	map<DWORD, std::unique_ptr<CTunerBankCtrl>> tunerBankMap;
+	//録画中チューナーの共聴セッション管理 (nwtvID → tunerBankMapのキー)
+	map<int, DWORD> sharedNwtvMap;
 
 	CEpgTimerSrvSetting::SETTING setting;
 	DWORD checkCount;

@@ -1470,6 +1470,22 @@ pair<CReserveManager::CHECK_STATUS, int> CReserveManager::Check()
 		AddPostBatWork(batWorkList, L"PostRecStart");
 		ProcessRecEnd(retList, tunerBank.first, &this->shutdownModePending);
 	}
+	//録画が終了した共聴セッションをクリーンアップ
+	if( this->sharedNwtvMap.empty() == false ){
+		lock_recursive_mutex lock(this->managerLock);
+		for( auto itr = this->sharedNwtvMap.begin(); itr != this->sharedNwtvMap.end(); ){
+			auto bankItr = this->tunerBankMap.find(itr->second);
+			if( bankItr == this->tunerBankMap.end() || bankItr->second->GetState() != CTunerBankCtrl::TR_REC ){
+				if( bankItr != this->tunerBankMap.end() ){
+					bankItr->second->SendRemoveTcpSend();
+				}
+				AddDebugLogFormat(L"CleanUp shared NWTV session (nwtvID=%d tunerID=%d)", itr->first, itr->second);
+				itr = this->sharedNwtvMap.erase(itr);
+			}else{
+				++itr;
+			}
+		}
+	}
 	if( this->checkCount % 30 == 0 ){
 		CheckAutoDel();
 		CheckOverTimeReserve();
@@ -1872,19 +1888,57 @@ CReserveManager::OPEN_NWTV_RESULT CReserveManager::OpenNWTV(int id, bool nwUdp, 
 	chInfo.ONID = onid;
 	chInfo.TSID = tsid;
 	chInfo.SID = sid;
-	for( const auto& tunerBank : this->tunerBankMap ){
-		if( tunerBank.second->GetState() == CTunerBankCtrl::TR_NWTV && tunerBank.second->GetNWTVID() == id ){
-			//すでに起動しているので使えたら使う
-			if( tunerBank.second->GetCh(chInfo.ONID, chInfo.TSID, chInfo.SID) ){
-				tunerBank.second->OpenNWTV(id, nwUdp, nwTcp, chInfo);
-				ret.succeeded = true;
-				ret.processID = tunerBank.second->GetProcessID();
-				ret.openCount = tunerBank.second->GetNWTVOpenCount();
-				return ret;
+	//既存の共聴セッションがあれば閉じる
+	auto sharedItr = this->sharedNwtvMap.find(id);
+	if( sharedItr != this->sharedNwtvMap.end() ){
+		DWORD tunerID = sharedItr->second;
+		this->sharedNwtvMap.erase(sharedItr);
+		if( std::find_if(this->sharedNwtvMap.begin(), this->sharedNwtvMap.end(),
+		                 [tunerID](const pair<int, DWORD>& a) { return a.second == tunerID; }) == this->sharedNwtvMap.end() ){
+			auto bankItr = this->tunerBankMap.find(tunerID);
+			if( bankItr != this->tunerBankMap.end() ){
+				bankItr->second->SendRemoveTcpSend();
 			}
-			tunerBank.second->CloseNWTV();
+		}
+	}
+	auto nwtvItr = this->tunerBankMap.end();
+	for( auto itr = this->tunerBankMap.begin(); itr != this->tunerBankMap.end(); itr++ ){
+		if( itr->second->GetState() == CTunerBankCtrl::TR_NWTV && itr->second->GetNWTVID() == id ){
+			nwtvItr = itr;
 			break;
 		}
+	}
+	//同一ONID/TSIDを録画中のチューナーがあれば先に共聴を試す
+	if( nwTcp ){
+		for( const auto& tunerBank : this->tunerBankMap ){
+			WORD curONID, curTSID;
+			if( tunerBank.second->GetState() == CTunerBankCtrl::TR_REC &&
+			    tunerBank.second->GetCurrentChID(&curONID, &curTSID) &&
+			    curONID == onid && curTSID == tsid ){
+				if( tunerBank.second->SendAddTcpSend() ){
+					if( nwtvItr != this->tunerBankMap.end() ){
+						nwtvItr->second->CloseNWTV();
+					}
+					this->sharedNwtvMap[id] = tunerBank.first;
+					ret.succeeded = true;
+					ret.processID = tunerBank.second->GetProcessID();
+					ret.openCount = 0;
+					AddDebugLogFormat(L"OpenNWTV shared with recording tuner %d (ONID=%d TSID=%d)", tunerBank.first, onid, tsid);
+					return ret;
+				}
+			}
+		}
+	}
+	if( nwtvItr != this->tunerBankMap.end() ){
+		//すでに起動しているので使えたら使う
+		if( nwtvItr->second->GetCh(chInfo.ONID, chInfo.TSID, chInfo.SID) ){
+			nwtvItr->second->OpenNWTV(id, nwUdp, nwTcp, chInfo);
+			ret.succeeded = true;
+			ret.processID = nwtvItr->second->GetProcessID();
+			ret.openCount = nwtvItr->second->GetNWTVOpenCount();
+			return ret;
+		}
+		nwtvItr->second->CloseNWTV();
 	}
 	for( size_t i = 0; i < tunerIDList.size(); i++ ){
 		auto itr = this->tunerBankMap.find(tunerIDList[i]);
@@ -1915,6 +1969,17 @@ CReserveManager::OPEN_NWTV_RESULT CReserveManager::IsOpenNWTV(int id) const
 			break;
 		}
 	}
+	if( ret.succeeded == false ){
+		auto sharedItr = this->sharedNwtvMap.find(id);
+		if( sharedItr != this->sharedNwtvMap.end() ){
+			auto bankItr = this->tunerBankMap.find(sharedItr->second);
+			if( bankItr != this->tunerBankMap.end() && bankItr->second->GetState() == CTunerBankCtrl::TR_REC ){
+				ret.succeeded = true;
+				ret.processID = bankItr->second->GetProcessID();
+				ret.openCount = 0;
+			}
+		}
+	}
 	return ret;
 }
 
@@ -1928,6 +1993,20 @@ bool CReserveManager::CloseNWTV(int id)
 			return true;
 		}
 	}
+	//共聴セッションのクローズ
+	auto sharedItr = this->sharedNwtvMap.find(id);
+	if( sharedItr != this->sharedNwtvMap.end() ){
+		DWORD tunerID = sharedItr->second;
+		this->sharedNwtvMap.erase(sharedItr);
+		if( std::find_if(this->sharedNwtvMap.begin(), this->sharedNwtvMap.end(),
+		                 [tunerID](const pair<int, DWORD>& a) { return a.second == tunerID; }) == this->sharedNwtvMap.end() ){
+			auto bankItr = this->tunerBankMap.find(tunerID);
+			if( bankItr != this->tunerBankMap.end() ){
+				bankItr->second->SendRemoveTcpSend();
+			}
+		}
+		return true;
+	}
 	return false;
 }
 
@@ -1940,6 +2019,9 @@ vector<pair<DWORD, int>> CReserveManager::GetNWTVIDAll() const
 		if( tunerBank.second->GetState() == CTunerBankCtrl::TR_NWTV ){
 			idList.emplace_back(tunerBank.first, tunerBank.second->GetNWTVID());
 		}
+	}
+	for( const auto& shared : this->sharedNwtvMap ){
+		idList.emplace_back(shared.second, shared.first);
 	}
 	return idList;
 }

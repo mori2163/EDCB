@@ -128,6 +128,10 @@ public:
 	bool OpenNWTV(int id, bool nwUdp, bool nwTcp, const SET_CH_INFO& chInfo);
 	//ネットワークモードのチューナを閉じる
 	void CloseNWTV();
+	//録画中プロセスにTCP送信開始を指示する
+	bool SendAddTcpSend() const;
+	//録画中プロセスにTCP送信停止を指示する
+	bool SendRemoveTcpSend() const;
 	//予約が録画中であればその録画ファイル名を取得する
 	bool GetRecFilePath(DWORD reserveID, wstring& filePath) const;
 	//予約情報をもとにファイル名を生成する

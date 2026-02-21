@@ -158,6 +158,9 @@
 #define CMD2_VIEW_APP_GET_EVENT_PF			1252 //現在or次の番組情報を取得する
 //TVTest連携のストリーミング配信専用
 #define CMD2_VIEW_APP_TT_SET_CTRL			1261 //ストリーミング配信制御IDの設定
+//録画中チューナー共聴用
+#define CMD2_VIEW_APP_ADD_TCP_SEND			1271 //TCP送信を動的に開始（設定ファイルの送信先を使用）
+#define CMD2_VIEW_APP_REMOVE_TCP_SEND		1272 //TCP送信を動的に停止
 
 
 //旧バージョン互換コマンド

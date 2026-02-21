@@ -1091,6 +1091,30 @@ void CTunerBankCtrl::CloseNWTV()
 	}
 }
 
+bool CTunerBankCtrl::SendAddTcpSend() const
+{
+	if( this->tunerPid ){
+		CWatchBlock watchBlock(&this->watchContext);
+		CSendCtrlCmd ctrlCmd;
+		ctrlCmd.SetPipeSetting(CMD2_VIEW_CTRL_PIPE, this->tunerPid);
+		ctrlCmd.SetConnectTimeOut(5000);
+		return ctrlCmd.SendViewAddTcpSend() == CMD_SUCCESS;
+	}
+	return false;
+}
+
+bool CTunerBankCtrl::SendRemoveTcpSend() const
+{
+	if( this->tunerPid ){
+		CWatchBlock watchBlock(&this->watchContext);
+		CSendCtrlCmd ctrlCmd;
+		ctrlCmd.SetPipeSetting(CMD2_VIEW_CTRL_PIPE, this->tunerPid);
+		ctrlCmd.SetConnectTimeOut(5000);
+		return ctrlCmd.SendViewRemoveTcpSend() == CMD_SUCCESS;
+	}
+	return false;
+}
+
 bool CTunerBankCtrl::GetRecFilePath(DWORD reserveID, wstring& filePath) const
 {
 	auto itr = this->reserveMap.find(reserveID);

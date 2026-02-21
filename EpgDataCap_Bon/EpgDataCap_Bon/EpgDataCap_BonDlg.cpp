@@ -1876,6 +1876,23 @@ void CEpgDataCap_BonDlg::CtrlCmdCallbackInvoked()
 			}
 		}
 		break;
+	case CMD2_VIEW_APP_ADD_TCP_SEND:
+		AddDebugLog(L"CMD2_VIEW_APP_ADD_TCP_SEND");
+		if( this->setting.tcpSendList.empty() == false ){
+			this->tcpSendList = this->setting.tcpSendList;
+			this->bonCtrl.SendTcp(&this->tcpSendList);
+			EnableWindow(GetDlgItem(IDC_CHECK_TCP), TRUE);
+			Button_SetCheck(GetDlgItem(IDC_CHECK_TCP), BST_CHECKED);
+			res.SetParam(CMD_SUCCESS);
+		}
+		break;
+	case CMD2_VIEW_APP_REMOVE_TCP_SEND:
+		AddDebugLog(L"CMD2_VIEW_APP_REMOVE_TCP_SEND");
+		this->tcpSendList.clear();
+		this->bonCtrl.SendTcp(NULL);
+		Button_SetCheck(GetDlgItem(IDC_CHECK_TCP), BST_UNCHECKED);
+		res.SetParam(CMD_SUCCESS);
+		break;
 	default:
 		AddDebugLogFormat(L"err default cmd %d", cmd.GetParam());
 		res.SetParam(CMD_NON_SUPPORT);
