@@ -1471,18 +1471,20 @@ pair<CReserveManager::CHECK_STATUS, int> CReserveManager::Check()
 		ProcessRecEnd(retList, tunerBank.first, &this->shutdownModePending);
 	}
 	//録画が終了した共聴セッションをクリーンアップ
-	if( this->sharedNwtvMap.empty() == false ){
+	{
 		lock_recursive_mutex lock(this->managerLock);
-		for( auto itr = this->sharedNwtvMap.begin(); itr != this->sharedNwtvMap.end(); ){
-			auto bankItr = this->tunerBankMap.find(itr->second);
-			if( bankItr == this->tunerBankMap.end() || bankItr->second->GetState() != CTunerBankCtrl::TR_REC ){
-				if( bankItr != this->tunerBankMap.end() ){
-					bankItr->second->SendRemoveTcpSend();
+		if( this->sharedNwtvMap.empty() == false ){
+			for( auto itr = this->sharedNwtvMap.begin(); itr != this->sharedNwtvMap.end(); ){
+				auto bankItr = this->tunerBankMap.find(itr->second);
+				if( bankItr == this->tunerBankMap.end() || bankItr->second->GetState() != CTunerBankCtrl::TR_REC ){
+					if( bankItr != this->tunerBankMap.end() ){
+						bankItr->second->SendRemoveTcpSend();
+					}
+					AddDebugLogFormat(L"CleanUp shared NWTV session (nwtvID=%d tunerID=%d)", itr->first, itr->second);
+					itr = this->sharedNwtvMap.erase(itr);
+				}else{
+					++itr;
 				}
-				AddDebugLogFormat(L"CleanUp shared NWTV session (nwtvID=%d tunerID=%d)", itr->first, itr->second);
-				itr = this->sharedNwtvMap.erase(itr);
-			}else{
-				++itr;
 			}
 		}
 	}
