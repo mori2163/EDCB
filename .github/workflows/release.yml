@@ -1,0 +1,99 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      # ソースコードをチェックアウト
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # MSBuild のセットアップ
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # x64 Release ビルド
+      - name: Build x64 Release
+        run: |
+          msbuild "Document\EDCB_ALL.VS2015.sln" `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:VisualStudioVersion=17.0 `
+            /m `
+            /t:Rebuild
+        shell: pwsh
+
+      # リリース用アーカイブを作成
+      - name: Create release archive
+        shell: pwsh
+        run: |
+          $releaseDir = "release_package"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+          # ビルド成果物をコピー (exe/dll/tvtp、pdbは除く)
+          $buildOutput = "x64\Release"
+          $includeExts = @("*.exe", "*.dll", "*.tvtp")
+          foreach ($ext in $includeExts) {
+            Get-ChildItem -Path $buildOutput -Filter $ext -File |
+              Copy-Item -Destination $releaseDir
+          }
+
+          # サブディレクトリをコピー
+          $subDirs = @("RecName", "Tools", "Write")
+          foreach ($dir in $subDirs) {
+            $src = Join-Path $buildOutput $dir
+            if (Test-Path $src) {
+              Copy-Item -Recurse -Force $src (Join-Path $releaseDir $dir)
+            }
+          }
+
+          # ini ディレクトリをコピー
+          Copy-Item -Recurse -Force "ini" (Join-Path $releaseDir "ini")
+
+          # ドキュメントをコピー
+          $docsDir = Join-Path $releaseDir "Document"
+          New-Item -ItemType Directory -Force -Path $docsDir | Out-Null
+          Get-ChildItem -Path "Document" -Filter "*.txt" -File |
+            Copy-Item -Destination $docsDir
+
+          # ZIP に圧縮
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath "EDCB_x64.zip" -Force
+          Write-Host "アーカイブを作成しました: EDCB_x64.zip"
+          Get-ChildItem EDCB_x64.zip | Select-Object Name, Length
+
+      # コミットのショートハッシュと日時を取得
+      - name: Get commit info
+        id: info
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $date = (Get-Date -Format "yyyy-MM-dd HH:mm") + " UTC"
+          $branch = "${{ github.ref_name }}"
+          echo "SHA=$sha" >> $env:GITHUB_OUTPUT
+          echo "DATE=$date" >> $env:GITHUB_OUTPUT
+          echo "BRANCH=$branch" >> $env:GITHUB_OUTPUT
+
+      # GitHub Release を作成/更新してアーカイブをアップロード
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: |
+            **Branch:** `${{ steps.info.outputs.BRANCH }}`
+            **Commit:** `${{ steps.info.outputs.SHA }}`
+            **Date:** ${{ steps.info.outputs.DATE }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: EDCB_x64.zip

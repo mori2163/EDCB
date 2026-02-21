@@ -45,6 +45,7 @@
 !/EpgTimerSrv/EpgTimerSrv/*.lib
 !EMPTY
 !Makefile
+!release.yml
 Debug/
 Release/
 obj/
